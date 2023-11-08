@@ -3,10 +3,9 @@
 # See LICENSE for license information.
 
 import math
-from typing import Callable, Optional
+from typing import Optional
 import torch
 import transformer_engine.pytorch as te
-from transformer_engine.pytorch.fp8 import DelayedScaling, dist_group_type
 
 def speedometer(
         module: torch.nn.Module,

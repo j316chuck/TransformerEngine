@@ -29,7 +29,7 @@ Transformer Engine documentation
    :caption: Getting Started
 
    installation
-   examples/quickstart.ipynb
+   examples/quickstart
 
 .. toctree::
    :hidden:
