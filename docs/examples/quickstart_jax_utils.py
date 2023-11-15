@@ -1,48 +1,11 @@
 # Copyright (c) 2022-2023, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 #
 # See LICENSE for license information.
-
-import time
 import jax
 from jax import numpy as jnp
 from flax import linen as nn
 from typing import Optional
 import transformer_engine.jax as te
-
-def speedometer(
-        module: nn.Module,
-        params: jnp.ndarray,
-        input: jnp.ndarray,
-        output_grad: jnp.ndarray,
-        forward_kwargs: dict = {},
-        fp8_autocast_kwargs: Optional[dict] = None,
-        timing_iters: int = 50,
-        warmup_iters: int = 50,
-) -> None:
-    """Measure average run time for a Flax module
-
-    Performs forward and backward passes.
-    """
-    if fp8_autocast_kwargs is None:
-        fp8_autocast_kwargs = { "enabled": False }
-
-    fwd_bwd_func = jax.value_and_grad(module.apply)
-
-    # Warmup runs
-    for _ in range(warmup_iters):
-        with te.fp8_autocast(**fp8_autocast_kwargs):
-            output, output_grad = fwd_bwd_func(params, input, **forward_kwargs)
-
-    # Timing runs
-    jax.block_until_ready()
-    start = time.time()
-    for _ in range(timing_iters):
-        with te.fp8_autocast(**fp8_autocast_kwargs):
-            output, output_grad = fwd_bwd_func(params, input, **forward_kwargs)
-    jax.block_until_ready()
-    end = time.time()
-
-    print(f"Mean time: {(end - start)/timing_iters} ms")
 
 
 class DotProductAttention(nn.Module):
@@ -53,13 +16,15 @@ class DotProductAttention(nn.Module):
     """
     num_attention_heads: int
     kv_channels: int
-    attention_dropout: float = 0.1
+    dropout_rate: Optional[float] = 0.1
+    dropout_rng: Optional[str] = 'dropout'
+    dtype: Optional[type] = jnp.float32
 
     def setup(self):
         self.projection_size = self.kv_channels * self.num_attention_heads
         self.hidden_size_per_attention_head = self.kv_channels
         self.norm_factor = jnp.sqrt(self.hidden_size_per_attention_head)
-        self.dropout = nn.Dropout(self.attention_dropout, rng_collection='attention')
+        self.dropout = nn.Dropout(self.dropout_rate, rng_collection=self.dropout_rng)
 
     def __call__(
             self,
@@ -67,46 +32,40 @@ class DotProductAttention(nn.Module):
             key: jnp.ndarray,
             value: jnp.ndarray,
             attention_mask: Optional[jnp.ndarray] = None,
+            train : Optional[bool] = False
     ) -> jnp.ndarray:
-        b = query.size(1)
-        np = query.size(2)
-        sq = query.size(0)
-        sk = key.size(0)
-        hn = value.size(3)
+        sq = query.shape[0]  # query sequence length
+        sk = key.shape[0]    # key sequence length
+        b = query.shape[1]   # batch size
+        np = query.shape[2]  # number of attention heads
+        hn = value.shape[3]  # attention head size
 
-        # [sq, b, np, hn] -> [sq, b * np, hn]
-        query = query.view(sq, b * np, -1)
-        # [sk, b, np, hn] -> [sk, b * np, hn]
-        key = key.view(sk, b * np, -1)
+        # Query * Key Mat-Mul
+        query = jnp.reshape(query, (sq, b*np, hn))             # [sq, b, np, hn]-->[b*np, sq, hn]
+        key = jnp.reshape(key, (sk, b*np, hn))                 # [sk, b, np, hn]-->[b*np, hn, sk]
+        bmm1 = jax.lax.batch_matmul(               # [sq, hn]*[hn, sk]=[sq, sk] batched over b*np
+            jnp.transpose(query, axes=(1, 0, 2)),
+            jnp.transpose(key, axes=(1, 2, 0))
+        )
+        scores = jnp.reshape(bmm1, (b, np, sq, sk))            # [b*np, sq, sk]-->[b, np, sq, sk]
+        
+        # Softmax + Dropout
+        probs = jax.nn.softmax(scores, where=attention_mask)
+        probs = self.dropout(probs, deterministic=(not train))
 
-        bmm1 = jax.lax.batch_matmul(query.transpose(0, 1), key.transpose(0, 1).transpose(1, 2)) / self.norm_factor
+        # Probabilities * Values Mat-Mul
+        value = jnp.reshape(value, (sk, b*np, hn))             # [sk, b, np, hn]-->[sk, b*np, hn]
+        probs = jnp.reshape(probs, (b*np, sq, sk))             # [b, np, sq, sk]-->[b*np, sq, sk]
+        context = jax.lax.batch_matmul(
+            probs,                                 # [sq, sk]*[sk, hn]=[sq, hn] batched over b*np
+            jnp.transpose(value, axes=(1,0,2))
+        )
 
-        # change view to [b, np, sq, sk]
-        attention_scores = bmm1.view(b, np, sq, sk)
-
-        attention_probs = jax.nn.softmax(attention_scores, where=attention_mask)
-
-        attention_probs = self.dropout(attention_probs)
-
-        # change view [sk, b * np, hn]
-        value = value.view(sk, b * np, -1)
-
-        # change view [b * np, sq, sk]
-        attention_probs = attention_probs.view(b * np, sq, -1)
-
-        # matmul: [b * np, sq, hn]
-        context = jax.lax.batch_matmul(attention_probs, value.transpose(0, 1))
-
-        # change view [b, np, sq, hn]
-        context = context.view(b, np, sq, hn)
-
-        # [b, np, sq, hn] --> [sq, b, np, hn]
-        context = jnp.transpose(context, axes=(2, 0, 1, 3))
-
-        # [sq, b, np, hn] --> [sq, b, hp]
-        context = context.view(sq, b, self.projection_size)
-
-        return context
+        context = jnp.reshape(context, (b, np, sq, hn))        # [b*np, sq, hn]-->[b, np, sq, hn]
+        context = jnp.transpose(context, (2, 0, 1, 3))         # [b, np, sq, hn]-->[sq, b, np, hn]
+        context = jnp.reshape(context, 
+                              (sq, b, self.projection_size))   # [sq, b, np, hn]-->[sq, b, np*hn]
+        return context.astype(self.dtype)
 
 
 class BasicMLP(nn.Module):
@@ -117,14 +76,44 @@ class BasicMLP(nn.Module):
     """
     hidden_size : int
     ffn_hidden_size : int
+    dtype : Optional[type] = jnp.float32
     
     def setup(self):
-        super().__init__()
-        self.linear1 = nn.DenseGeneral(self.ffn_hidden_size, use_bias=True)
-        self.linear2 = nn.DenseGeneral(self.hidden_size, use_bias=True)
+        self.linear1 = nn.DenseGeneral(self.ffn_hidden_size, dtype=self.dtype)
+        self.linear2 = nn.DenseGeneral(self.hidden_size, dtype=self.dtype)
 
     def __call__(self, x: jnp.ndarray) -> jnp.ndarray:
         x = self.linear1(x)
         x = jax.nn.gelu(x, approximate=True)
         x = self.linear2(x)
         return x
+
+
+def inspect_params(data, prefix='', show_all=False):
+    at_top_level = 'params' in data.keys()
+    for idx, key in enumerate(data.keys()):
+        if show_all or not at_top_level or key == 'params':
+            if isinstance(data[key], dict):
+                print(f"{prefix + key}")
+                base = prefix[:-3]
+                if len(prefix) > 0:
+                    base += '   ' if idx+1 == len(data.keys()) else '|  '
+                inspect_params(data[key], prefix=base+'|__')
+            else:
+                try:
+                    info = data[key].shape
+                except AttributeError:
+                    info = data[key]
+                print(f"{prefix + key}: {info}")
+
+def share_params(te_params, flax_params):
+    for key in te_params.keys():
+        if key in flax_params.keys():
+            if isinstance(te_params[key], dict):
+                te_params[key] = share_params(te_params[key], flax_params[key])
+            elif 'kernel' in key:
+                te_params[key] = flax_params['kernel']
+            else:
+                te_params[key] = flax_params[key]
+    return te_params
+
