@@ -311,7 +311,13 @@ class _LayerNormLinear(torch.autograd.Function):
             ) = ctx.saved_tensors
 
             # Primary weights are in FP8 or module is wrapped as FullyShardedDataParallel
-            if ctx.fp8 and (ctx.is_fsdp or weight_t_fp8 is None):
+            if ctx.fp8 and weight_t_fp8 is None:
+                if ctx.is_fsdp or not isinstance(weight, Float8Tensor):
+                    weight = Float8Tensor.to_float(
+                        weight,
+                        fp8_meta=ctx.fp8_meta,
+                        fp8_meta_index=tex.FP8FwdTensors.GEMM1_WEIGHT
+                    )
                 weight_t_fp8 = weight.transpose(update_cache=ctx.is_first_microbatch)
 
             if ctx.ub_bulk_dgrad:
@@ -649,10 +655,12 @@ class LayerNormLinear(TransformerEngineBaseModule):
              `set_tensor_parallel_group(tp_group)` method on the initialized module before the
              forward pass to supply the tensor parallel group needed for tensor and sequence
              parallel collectives.
-    parallel_mode : {None, 'Column', 'Row'}, default = `None`
+    parallel_mode : {None, 'Column', 'Row', 'FSDP'}, default = `None`
                    used to decide whether this Linear layer is Column Parallel Linear or Row
                    Parallel Linear as described `here <https://arxiv.org/pdf/1909.08053.pdf>`_.
-                   When set to `None`, no communication is performed.
+                   When set to `None` or `FSDP`, no communication is performed. `FSDP` mode
+                   optimizes memory usage in the backward pass for module parameters sharded
+                   by PyTorch's FullyShardedDataParallel strategy.
 
     Optimization parameters
     -----------------------
@@ -721,7 +729,6 @@ class LayerNormLinear(TransformerEngineBaseModule):
         if any([ub_bulk_wgrad, ub_bulk_dgrad, ub_split_ag]):
             assert ub_name is not None, "Userbuffer name [string] is not set."
         self.ub_name = ub_name
-        self.is_fsdp = isinstance(self, FullyShardedDataParallel)
 
         if ub_bulk_wgrad or ub_bulk_dgrad or ub_split_ag or ub_atomic_gemm_ag:
             assert (
@@ -743,6 +750,10 @@ class LayerNormLinear(TransformerEngineBaseModule):
         self.set_nccl_overlap_warning_if_tp()
 
         self.parallel_mode = parallel_mode
+        self.is_fsdp = None
+        if self.parallel_mode is not None and self.parallel_mode.lower() == 'fsdp':
+            self.is_fsdp = True
+            self.parallel_mode = None
         assert (
             self.parallel_mode in GemmParallelModes
         ), f"parallel_mode {parallel_mode} not supported"

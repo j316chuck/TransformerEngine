@@ -504,10 +504,20 @@ class _LayerNormMLP(torch.autograd.Function):
             ) = ctx.saved_tensors
 
             # Primary weights are in FP8 or module is wrapped as FullyShardedDataParallel
-            if ctx.fp8 and (ctx.is_fsdp or fc1_weight_t_fp8 is None):
+            if ctx.fp8 and fc1_weight_t_fp8 is None:
+                if ctx.is_fsdp or not isinstance(fc1_weight, Float8Tensor):
+                    fc1_weight = Float8Tensor.to_float8(
+                        fc1_weight,
+                        fp8_meta=ctx.fp8_meta,
+                        fp8_meta_index=tex.FP8FwdTensors.GEMM1_WEIGHT)
                 fc1_weight_t_fp8 = fc1_weight.transpose(update_cache=ctx.is_first_microbatch)
-            if ctx.fp8 and (ctx.is_fsdp or fc2_weight_t_fp8 is None):
-                fc2_weight_t_fp8 = fc2_weight.transpose(update_cache=ctx.is_first_microbatch)
+            if ctx.fp8 and fc2_weight_t_fp8 is None:
+                if ctx.is_fsdp or not isinstance(fc2_weight, Float8Tensor):
+                    fc2_weight = Float8Tensor.to_float8(
+                        fc2_weight,
+                        fp8_meta=ctx.fp8_meta,
+                        fp8_meta_index=tex.FP8FwdTensors.GEMM2_WEIGHT)
+                f2_weight_t_fp8 = fc2_weight.transpose(update_cache=ctx.is_first_microbatch)
 
             activation_func = _act_func(ctx.activation)[1]
 
@@ -1050,6 +1060,9 @@ class LayerNormMLP(TransformerEngineBaseModule):
     set_parallel_mode : bool, default = `False`
                       if set to `True`, FC1 is used as Column Parallel and FC2 is used as Row
                       Parallel as described `here <https://arxiv.org/pdf/1909.08053.pdf>`_.
+    is_fsdp : bool, default = `False`
+            if set to `True`, submodule parallelism is turned off and the memory usage in the
+            backward pass is optimized for PyTorch's FullyShardedDataParallel strategy.
     sequence_parallel : bool, default = `False`
                        if set to `True`, uses sequence parallelism.
     tp_group : ProcessGroup, default = `None`
@@ -1117,6 +1130,7 @@ class LayerNormMLP(TransformerEngineBaseModule):
         ub_atomic_gemm_rs: bool = False,
         ub_split_ag: bool = False,
         ub_atomic_gemm_ag: bool = False,
+        is_fsdp: bool = False,
     ) -> None:
         super().__init__()
 
@@ -1131,7 +1145,8 @@ class LayerNormMLP(TransformerEngineBaseModule):
         self.return_layernorm_output = return_layernorm_output
         self.bias_gelu_nvfusion = (bool(int(os.getenv("NVTE_BIAS_GELU_NVFUSION", "1"))) and
                                    self.activation == 'gelu')
-        self.set_parallel_mode = set_parallel_mode
+        self.is_fsdp = is_fsdp
+        self.set_parallel_mode = False if is_fsdp else set_parallel_mode
         self.zero_centered_gamma = zero_centered_gamma
         self.primary_weights_in_fp8 = FP8GlobalStateManager.with_fp8_parameters()
         self.ub_bulk_wgrad = ub_bulk_wgrad
@@ -1140,7 +1155,6 @@ class LayerNormMLP(TransformerEngineBaseModule):
         self.ub_split_ag = ub_split_ag
         self.ub_atomic_gemm_rs = ub_atomic_gemm_rs
         self.ub_atomic_gemm_ag = ub_atomic_gemm_ag
-        self.is_fsdp = isinstance(self, FullyShardedDataParallel)
 
         if (ub_bulk_wgrad # pylint: disable=too-many-boolean-expressions
             or ub_bulk_dgrad
@@ -1354,6 +1368,7 @@ class LayerNormMLP(TransformerEngineBaseModule):
                         is_first_microbatch
                 )
 
+            is_fsdp = isinstance(self, FullyShardedDataParallel)
             if torch.is_grad_enabled():
                 fwd_fn = _LayerNormMLP.apply
                 args = []
