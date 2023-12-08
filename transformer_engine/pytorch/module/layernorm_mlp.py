@@ -116,6 +116,7 @@ class _LayerNormMLP(torch.autograd.Function):
         ub_atomic_gemm_rs: bool,
         ub_split_ag: bool,
         ub_atomic_gemm_ag: bool,
+        is_fsdp: bool
     ) -> Union[Tuple[torch.Tensor, ...], torch.Tensor]:
         # Make sure input dimensions are compatible
         in_features = ln_weight.numel()
@@ -219,8 +220,9 @@ class _LayerNormMLP(torch.autograd.Function):
                     fp8_meta=fp8_meta,
                     fp8_meta_index=tex.FP8FwdTensors.GEMM2_WEIGHT,
                 )
-                if is_grad_enabled:
-                    # Fused cast-transpose kernels
+                if not is_fsdp and is_grad_enabled:
+                    # FSDP weights need to be transposed in the backward pass to avoid
+                    # memory usage blowing up due to unsharded Fp8 weight copies.
                     tex.fp8_cast_transpose_fused(
                         fc1_weight,
                         fp8_meta["scaling_fwd"],
@@ -499,7 +501,7 @@ class _LayerNormMLP(torch.autograd.Function):
                 fwd_scale_inverses,
             ) = ctx.saved_tensors
 
-            # Primary weights are in FP8.
+            # Primary weights are in FP8 or module is wrapped as FullyShardedDataParallel
             if ctx.fp8 and fc1_weight_t_fp8 is None:
                 fc1_weight_t_fp8 = fc1_weight.transpose(update_cache=ctx.is_first_microbatch)
             if ctx.fp8 and fc2_weight_t_fp8 is None:
@@ -1135,6 +1137,7 @@ class LayerNormMLP(TransformerEngineBaseModule):
         self.ub_split_ag = ub_split_ag
         self.ub_atomic_gemm_rs = ub_atomic_gemm_rs
         self.ub_atomic_gemm_ag = ub_atomic_gemm_ag
+        self.is_fsdp = isinstance(self, torch.distributed.fsdp.FullyShardedDataParallel)
 
         if (ub_bulk_wgrad # pylint: disable=too-many-boolean-expressions
             or ub_bulk_dgrad
@@ -1395,6 +1398,7 @@ class LayerNormMLP(TransformerEngineBaseModule):
                 self.ub_atomic_gemm_rs,
                 self.ub_split_ag,
                 self.ub_atomic_gemm_ag,
+                self.is_fsdp
             )
             out = fwd_fn(*args)
 
