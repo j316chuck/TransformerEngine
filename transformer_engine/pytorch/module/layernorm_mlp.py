@@ -10,6 +10,7 @@ from typing import Union, Optional, Callable, Tuple, List, Dict, Any
 import torch
 from torch.nn.parameter import Parameter
 from torch.nn import init
+from torch.distributed.fsdp import FullyShardedDataParallel
 
 from .base import (
     get_workspace,
@@ -220,7 +221,7 @@ class _LayerNormMLP(torch.autograd.Function):
                     fp8_meta=fp8_meta,
                     fp8_meta_index=tex.FP8FwdTensors.GEMM2_WEIGHT,
                 )
-                if not is_fsdp and is_grad_enabled:
+                if is_grad_enabled and not is_fsdp:
                     # FSDP weights need to be transposed in the backward pass to avoid
                     # memory usage blowing up due to unsharded Fp8 weight copies.
                     tex.fp8_cast_transpose_fused(
@@ -431,9 +432,9 @@ class _LayerNormMLP(torch.autograd.Function):
                 fc1_out,
                 gelu_out,
                 fc1_weight,
-                fc1_weight_t_fp8,
+                fc1_weight_t_fp8 if fp8 and not is_fsdp else None,
                 fc2_weight,
-                fc2_weight_t_fp8,
+                fc2_weight_t_fp8 if fp8 and not is_fsdp else None,
                 fc1_bias,
                 fp8_meta["scaling_fwd"].scale_inv.clone() if fp8 else None,
             )
@@ -461,6 +462,7 @@ class _LayerNormMLP(torch.autograd.Function):
             ctx.ub_atomic_gemm_ag = ub_atomic_gemm_ag
             ctx.requires_dgrad = inp.requires_grad
             ctx.normalization = normalization
+            ctx.is_fsdp = is_fsdp
 
         # Row Parallel Linear
         if ub_split_rs or ub_atomic_gemm_rs:
@@ -502,9 +504,9 @@ class _LayerNormMLP(torch.autograd.Function):
             ) = ctx.saved_tensors
 
             # Primary weights are in FP8 or module is wrapped as FullyShardedDataParallel
-            if ctx.fp8 and fc1_weight_t_fp8 is None:
+            if ctx.fp8 and (ctx.is_fsdp or fc1_weight_t_fp8 is None):
                 fc1_weight_t_fp8 = fc1_weight.transpose(update_cache=ctx.is_first_microbatch)
-            if ctx.fp8 and fc2_weight_t_fp8 is None:
+            if ctx.fp8 and (ctx.is_fsdp or fc2_weight_t_fp8 is None):
                 fc2_weight_t_fp8 = fc2_weight.transpose(update_cache=ctx.is_first_microbatch)
 
             activation_func = _act_func(ctx.activation)[1]
@@ -995,6 +997,7 @@ class _LayerNormMLP(torch.autograd.Function):
             None,
             None,
             None,
+            None,
         )
 
 
@@ -1137,7 +1140,7 @@ class LayerNormMLP(TransformerEngineBaseModule):
         self.ub_split_ag = ub_split_ag
         self.ub_atomic_gemm_rs = ub_atomic_gemm_rs
         self.ub_atomic_gemm_ag = ub_atomic_gemm_ag
-        self.is_fsdp = isinstance(self, torch.distributed.fsdp.FullyShardedDataParallel)
+        self.is_fsdp = isinstance(self, FullyShardedDataParallel)
 
         if (ub_bulk_wgrad # pylint: disable=too-many-boolean-expressions
             or ub_bulk_dgrad
@@ -1398,7 +1401,7 @@ class LayerNormMLP(TransformerEngineBaseModule):
                 self.ub_atomic_gemm_rs,
                 self.ub_split_ag,
                 self.ub_atomic_gemm_ag,
-                self.is_fsdp
+                self.is_fsdp,
             )
             out = fwd_fn(*args)
 

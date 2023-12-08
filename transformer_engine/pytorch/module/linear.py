@@ -8,6 +8,7 @@ from typing import Union, Optional, Callable, Tuple, List, Dict, Any
 
 import torch
 from torch.nn.parameter import Parameter
+from torch.distributed.fsdp import FullyShardedDataParallel
 
 import transformer_engine_extensions as tex
 
@@ -114,6 +115,7 @@ class _Linear(torch.autograd.Function):
                 and is_grad_enabled
                 and weight.requires_grad
                 and not sequence_parallel
+                and not is_fsdp
             ):
                 # FP8 input for forward, FP8 input transpose for backward wgrad
                 inputmat, inputmat_t = fp8_cast_transpose_fused(
@@ -157,7 +159,7 @@ class _Linear(torch.autograd.Function):
                     fp8_meta=fp8_meta,
                     fp8_meta_index=tex.FP8FwdTensors.GEMM1_WEIGHT,
                 )
-                if not is_fsdp and is_grad_enabled:
+                if is_grad_enabled and not is_fsdp:
                     # FSDP weights need to be transposed in the backward pass to avoid
                     # memory usage blowing up due to unsharded Fp8 weight copies.
                     fp8_cast_transpose_fused(
@@ -277,7 +279,7 @@ class _Linear(torch.autograd.Function):
                 saved_inputmat,
                 saved_inputmat_t,
                 weight,
-                weight_t_fp8 if fp8 else None,
+                weight_t_fp8 if fp8 and not is_fsdp else None,
                 fp8_meta["scaling_fwd"].scale_inv.clone() if fp8 else None,
             )
             ctx.activation_dtype = activation_dtype
@@ -296,6 +298,7 @@ class _Linear(torch.autograd.Function):
             ctx.ub_name = ub_name
             ctx.tp_size = tp_size
             ctx.requires_dgrad = inp.requires_grad
+            ctx.is_fsdp = is_fsdp
 
         # Row Parallel Linear
         if ub_split_rs or ub_atomic_gemm_rs:
@@ -325,7 +328,7 @@ class _Linear(torch.autograd.Function):
             ) = ctx.saved_tensors
 
             # Primary weights are in FP8 or module is wrapped as FullyShardedDataParallel
-            if ctx.fp8 and weight_t_fp8 is None:
+            if ctx.fp8 and (ctx.is_fsdp or weight_t_fp8 is None):
                 weight_t_fp8 = weight.transpose(update_cache=ctx.is_first_microbatch)
 
             if ctx.ub_split_ag or ctx.ub_atomic_gemm_ag:
@@ -520,6 +523,7 @@ class _Linear(torch.autograd.Function):
             None,
             None,
             None,
+            None,
         )
 
 
@@ -629,7 +633,7 @@ class Linear(TransformerEngineBaseModule):
         if any([ub_atomic_gemm_rs, ub_atomic_gemm_ag]):
             assert ub_name is not None, "Userbuffer name [string] is not set."
         self.ub_name = ub_name
-        self.is_fsdp = isinstance(self, torch.distributed.fsdp.FullyShardedDataParallel)
+        self.is_fsdp = isinstance(self, FullyShardedDataParallel)
 
         if ub_split_rs or ub_split_ag or ub_atomic_gemm_rs:
             assert (
@@ -881,7 +885,7 @@ class Linear(TransformerEngineBaseModule):
                 self.ub_atomic_gemm_rs,
                 self.ub_atomic_gemm_ag,
                 self.ub_name,
-                self.is_fsdp
+                self.is_fsdp,
             )
             out = linear_fn(*args)
 

@@ -11,6 +11,7 @@ from typing import Union, Optional, Callable, Tuple, List, Dict, Any
 import torch
 from torch.nn.parameter import Parameter
 from torch.nn import init
+from torch.distributed.fsdp import FullyShardedDataParallel
 
 from .. import cpp_extensions as tex
 
@@ -176,7 +177,7 @@ class _LayerNormLinear(torch.autograd.Function):
                     fp8_meta=fp8_meta,
                     fp8_meta_index=tex.FP8FwdTensors.GEMM1_WEIGHT,
                 )
-                if not is_fsdp and is_grad_enabled:
+                if is_grad_enabled and not is_fsdp:
                     # FSDP weights need to be transposed in the backward pass to avoid
                     # memory usage blowing up due to unsharded Fp8 weight copies.
                     tex.fp8_cast_transpose_fused(
@@ -252,7 +253,7 @@ class _LayerNormLinear(torch.autograd.Function):
                 weight,
                 weight_t_fp8,
                 ln_out,
-                fp8_meta["scaling_fwd"].scale_inv.clone() if fp8 else None,
+                fp8_meta["scaling_fwd"].scale_inv.clone() if fp8 else None
             )
 
             ctx.activation_dtype = activation_dtype
@@ -275,6 +276,7 @@ class _LayerNormLinear(torch.autograd.Function):
             ctx.ub_name = ub_name
             ctx.requires_dgrad = inp.requires_grad
             ctx.normalization = normalization
+            ctx.is_fsdp = is_fsdp
 
         # Row Parallel Linear
         if parallel_mode == "row" and sequence_parallel:
@@ -309,7 +311,7 @@ class _LayerNormLinear(torch.autograd.Function):
             ) = ctx.saved_tensors
 
             # Primary weights are in FP8 or module is wrapped as FullyShardedDataParallel
-            if ctx.fp8 and weight_t_fp8 is None:
+            if ctx.fp8 and (ctx.is_fsdp or weight_t_fp8 is None):
                 weight_t_fp8 = weight.transpose(update_cache=ctx.is_first_microbatch)
 
             if ctx.ub_bulk_dgrad:
@@ -587,6 +589,7 @@ class _LayerNormLinear(torch.autograd.Function):
             None,
             None,
             None,
+            None,
         )
 
 
@@ -718,8 +721,7 @@ class LayerNormLinear(TransformerEngineBaseModule):
         if any([ub_bulk_wgrad, ub_bulk_dgrad, ub_split_ag]):
             assert ub_name is not None, "Userbuffer name [string] is not set."
         self.ub_name = ub_name
-        self.is_fsdp = isinstance(self, torch.distributed.fsdp.FullyShardedDataParallel)
-
+        self.is_fsdp = isinstance(self, FullyShardedDataParallel)
 
         if ub_bulk_wgrad or ub_bulk_dgrad or ub_split_ag or ub_atomic_gemm_ag:
             assert (
@@ -1011,7 +1013,7 @@ class LayerNormLinear(TransformerEngineBaseModule):
                 self.ub_split_ag,
                 self.ub_atomic_gemm_ag,
                 self.ub_name,
-                self.is_fsdp
+                self.is_fsdp,
             )
             out = fwd_fn(*args)
 
