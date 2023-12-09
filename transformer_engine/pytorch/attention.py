@@ -2569,6 +2569,9 @@ class MultiheadAttention(torch.nn.Module):
              `set_tensor_parallel_group(tp_group)` method on the initialized module before the
              forward pass to supply the tensor parallel group needed for tensor and sequence
              parallel collectives.
+    is_fsdp : bool, default = `False`
+            if set to `True`, submodule parallelism is turned off and the memory usage in the
+            backward pass is optimized for PyTorch's FullyShardedDataParallel strategy.
 
     Optimization parameters
     -----------------------
@@ -2630,6 +2633,7 @@ class MultiheadAttention(torch.nn.Module):
         bias: bool = True,
         normalization: str = "LayerNorm",
         device: Union[torch.device, str] = "cuda",
+        is_fsdp: bool = False
     ) -> None:
         super().__init__()
 
@@ -2687,7 +2691,10 @@ class MultiheadAttention(torch.nn.Module):
             "device": device,
         }
 
-        qkv_parallel_mode = "column" if set_parallel_mode else None
+        self.is_fsdp = is_fsdp
+        self.set_parallel_mode = False if self.is_fsdp else set_parallel_mode
+        qkv_parallel_mode = "column" if self.set_parallel_mode else None
+        proj_parallel_mode = "row" if self.set_parallel_mode else None
 
         if self.attention_type == "self":
             parameters_split = {"query_": hidden_size,
@@ -2701,7 +2708,7 @@ class MultiheadAttention(torch.nn.Module):
                     init_method=init_method,
                     bias=bias,
                     return_bias=False,
-                    parallel_mode=qkv_parallel_mode,
+                    parallel_mode='fsdp' if self.is_fsdp else qkv_parallel_mode,
                     return_layernorm_output=return_layernorm_output,
                     parameters_split=parameters_split,
                     zero_centered_gamma=zero_centered_gamma,
@@ -2719,7 +2726,7 @@ class MultiheadAttention(torch.nn.Module):
                     init_method=init_method,
                     bias=bias,
                     return_bias=False,
-                    parallel_mode=qkv_parallel_mode,
+                    parallel_mode='fsdp' if self.is_fsdp else qkv_parallel_mode,
                     parameters_split=parameters_split,
                     **common_gemm_kwargs,
                 )
@@ -2732,7 +2739,7 @@ class MultiheadAttention(torch.nn.Module):
                     init_method=init_method,
                     bias=bias,
                     return_bias=False,
-                    parallel_mode=qkv_parallel_mode,
+                    parallel_mode='fsdp' if self.is_fsdp else qkv_parallel_mode,
                     parameters_split=("query_",) if not fuse_qkv_params else None,
                     return_layernorm_output=return_layernorm_output,
                     zero_centered_gamma=zero_centered_gamma,
@@ -2750,7 +2757,7 @@ class MultiheadAttention(torch.nn.Module):
                     init_method=init_method,
                     bias=bias,
                     return_bias=False,
-                    parallel_mode=qkv_parallel_mode,
+                    parallel_mode='fsdp' if self.is_fsdp else qkv_parallel_mode,
                     **common_gemm_kwargs,
                 )
             self.key_value = Linear(
@@ -2759,7 +2766,7 @@ class MultiheadAttention(torch.nn.Module):
                 init_method=init_method,
                 bias=bias,
                 return_bias=False,
-                parallel_mode=qkv_parallel_mode,
+                parallel_mode='fsdp' if self.is_fsdp else qkv_parallel_mode,
                 parameters_split=("key_", "value_") if not fuse_qkv_params else None,
                 **common_gemm_kwargs,
             )
@@ -2784,7 +2791,7 @@ class MultiheadAttention(torch.nn.Module):
             init_method=output_layer_init_method,
             bias=bias,
             return_bias=return_bias,
-            parallel_mode="row" if set_parallel_mode else None,
+            parallel_mode='fsdp' if self.is_fsdp else proj_parallel_mode,
             ub_split_rs=ub_split_rs,
             ub_split_ag=ub_split_ag,
             ub_atomic_gemm_rs=ub_atomic_gemm_rs,

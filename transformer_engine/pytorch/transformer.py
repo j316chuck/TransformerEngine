@@ -185,6 +185,9 @@ class TransformerLayer(torch.nn.Module):
              `set_tensor_parallel_group(tp_group)` method on the initialized module before the
              forward pass to supply the tensor parallel group needed for tensor and sequence
              parallel collectives.
+    is_fsdp : bool, default = `False`
+            if set to `True`, submodule parallelism is turned off and the memory usage in the
+            backward pass is optimized for PyTorch's FullyShardedDataParallel strategy.
 
     Optimization parameters
     -----------------------
@@ -253,6 +256,7 @@ class TransformerLayer(torch.nn.Module):
         activation: str = 'gelu',
         normalization: str = "LayerNorm",
         device: Union[torch.device, str] = "cuda",
+        is_fsdp: bool = False
     ) -> None:
         super().__init__()
 
@@ -360,6 +364,7 @@ class TransformerLayer(torch.nn.Module):
             "ub_split_rs" : ub_split_rs,
             "ub_atomic_gemm_rs" : ub_atomic_gemm_rs,
             "ub_atomic_gemm_ag" : ub_atomic_gemm_ag,
+            "is_fsdp" : is_fsdp
         }
 
         self.self_attention = MultiheadAttention(
@@ -419,6 +424,7 @@ class TransformerLayer(torch.nn.Module):
             activation=activation,
             normalization=normalization,
             device=device,
+            is_fsdp=is_fsdp
         )
 
         self.hidden_dropout = hidden_dropout

@@ -5,6 +5,7 @@
 """Linear API"""
 import warnings
 from typing import Union, Optional, Callable, Tuple, List, Dict, Any
+from dataclasses import dataclass
 
 import torch
 from torch.nn.parameter import Parameter
@@ -42,6 +43,7 @@ from ..distributed import (
 from ..cpp_extensions import (
     fp8_gemm,
     gemm,
+    fp8_transpose,
     fp8_cast_transpose_fused,
     cast_to_fp8,
 )
@@ -282,6 +284,7 @@ class _Linear(torch.autograd.Function):
                 saved_inputmat_t,
                 weight,
                 weight_t_fp8 if fp8 and not is_fsdp else None,
+                fp8_meta["scaling_fwd"].scale.clone() if fp8 else None,
                 fp8_meta["scaling_fwd"].scale_inv.clone() if fp8 else None,
             )
             ctx.activation_dtype = activation_dtype
@@ -300,7 +303,8 @@ class _Linear(torch.autograd.Function):
             ctx.ub_name = ub_name
             ctx.tp_size = tp_size
             ctx.requires_dgrad = inp.requires_grad
-            ctx.is_fsdp = is_fsdp
+            ctx.primary_weights_in_fp8 = primary_weights_in_fp8
+            ctx.amax_shape = fp8_meta["scaling_fwd"].amax_history.shape
 
         # Row Parallel Linear
         if ub_split_rs or ub_atomic_gemm_rs:
@@ -326,18 +330,48 @@ class _Linear(torch.autograd.Function):
                 inputmat_t,
                 weight,
                 weight_t_fp8,
+                fwd_scales,
                 fwd_scale_inverses,
             ) = ctx.saved_tensors
 
-            # Primary weights are in FP8 or module is wrapped as FullyShardedDataParallel
-            if ctx.fp8 and  weight_t_fp8 is None:
-                if ctx.is_fsdp or not isinstance(weight, Float8Tensor):
-                    weight = Float8Tensor.to_float8(
-                        weight,
-                        fp8_meta=ctx.fp8_meta,
-                        fp8_meta_index=tex.FP8FwdTensors.GEMM1_WEIGHT
-                    )
-                weight_t_fp8 = weight.transpose(update_cache=ctx.is_first_microbatch)
+            fp8_dtype_forward = None
+            fp8_dtype_backward = None
+            if ctx.fp8:
+                fp8_dtype_forward = get_fp8_te_dtype(
+                    ctx.fp8_meta["recipe"], fprop_tensor=True
+                )
+                fp8_dtype_backward = get_fp8_te_dtype(
+                    ctx.fp8_meta["recipe"], fprop_tensor=False
+                )
+
+                if weight_t_fp8 is None:
+                    if ctx.primary_weights_in_fp8:
+                        weight_t_fp8 = weight.transpose(update_cache=ctx.is_first_microbatch)
+                    else:
+                        # Module is wrapped as torch.distributed.fsdp.FullyShardedDataParallel
+                        @dataclass
+                        class dummy_fp8_meta:
+                            amax_history = torch.empty(
+                                ctx.amax_shape, device=torch.cuda.current_device())
+                            scale = fwd_scales
+                            scale_inv = fwd_scale_inverses
+
+                        weight_t_fp8 = Float8Tensor(
+                            data=torch.empty(
+                                weight.shape[1],
+                                weight.shape[0],
+                                device=torch.cuda.current_device(),
+                                dtype=torch.uint8),
+                            fp8_dtype=tex.DType.kFloat8E4M3,
+                            fp8_scale_inv=1,
+                        )
+                        fp8_cast_transpose_fused(
+                            weight,
+                            dummy_fp8_meta,
+                            tex.FP8FwdTensors.GEMM1_WEIGHT,
+                            fp8_dtype_forward,
+                            transpose_out=weight_t_fp8._data,
+                        )
 
             if ctx.ub_split_ag or ctx.ub_atomic_gemm_ag:
                 tp_world_size = get_distributed_world_size(ctx.tp_group)
@@ -376,14 +410,6 @@ class _Linear(torch.autograd.Function):
                 )
             else:
                 accumulate_wgrad_into_param_main_grad = ctx.fuse_wgrad_accumulation
-
-            if ctx.fp8:
-                fp8_dtype_forward = get_fp8_te_dtype(
-                    ctx.fp8_meta["recipe"], fprop_tensor=True
-                )
-                fp8_dtype_backward = get_fp8_te_dtype(
-                    ctx.fp8_meta["recipe"], fprop_tensor=False
-                )
 
             ub_algo = tex.UbufOverlapAlgo.SPLIT_PIPELINED_AG if ctx.ub_split_ag else None
             ub_algo = tex.UbufOverlapAlgo.ATOMIC_GEMM_AG if ctx.ub_atomic_gemm_ag else ub_algo
