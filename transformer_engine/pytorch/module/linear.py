@@ -9,9 +9,6 @@ from dataclasses import dataclass
 
 import torch
 from torch.nn.parameter import Parameter
-from torch.distributed.fsdp import FullyShardedDataParallel
-from torch.distributed._composable_state import _get_module_state
-from torch.distributed.fsdp._common_utils import _FSDPState
 
 import transformer_engine_extensions as tex
 
@@ -87,8 +84,7 @@ class _Linear(torch.autograd.Function):
         ub_split_ag: bool,
         ub_atomic_gemm_rs: bool,
         ub_atomic_gemm_ag: bool,
-        ub_name: str,
-        is_fsdp: bool
+        ub_name: str
     ) -> torch.Tensor:
         # Make sure input dimensions are compatible
         in_features = weight.shape[-1]
@@ -119,7 +115,6 @@ class _Linear(torch.autograd.Function):
                 and is_grad_enabled
                 and weight.requires_grad
                 and not sequence_parallel
-                and not is_fsdp
             ):
                 # FP8 input for forward, FP8 input transpose for backward wgrad
                 inputmat, inputmat_t = fp8_cast_transpose_fused(
@@ -164,8 +159,6 @@ class _Linear(torch.autograd.Function):
                     fp8_meta_index=tex.FP8FwdTensors.GEMM1_WEIGHT,
                 )
                 if is_grad_enabled:
-                    # FSDP weights need to be transposed in the backward pass to avoid
-                    # memory usage blowing up due to unsharded Fp8 weight copies.
                     fp8_cast_transpose_fused(
                         weight,
                         fp8_meta["scaling_fwd"],
@@ -575,12 +568,9 @@ class Linear(TransformerEngineBaseModule):
              `set_tensor_parallel_group(tp_group)` method on the initialized module before the
              forward pass to supply the tensor parallel group needed for tensor and sequence
              parallel collectives.
-    parallel_mode : {None, 'Column', 'Row', 'FSDP'}, default = `None`
+    parallel_mode : {None, 'Column', 'Row'}, default = `None`
                    used to decide whether this Linear layer is Column Parallel Linear or Row
                    Parallel Linear as described `here <https://arxiv.org/pdf/1909.08053.pdf>`_.
-                   When set to `None` or 'FSDP', no communication is performed. 'FSDP' mode
-                   optimizes memory usage in the backward pass for module parameters sharded
-                   by PyTorch's FullyShardedDataParallel strategy.
 
     Optimization parameters
     -----------------------
@@ -622,6 +612,7 @@ class Linear(TransformerEngineBaseModule):
         ub_atomic_gemm_rs: bool = False,
         ub_atomic_gemm_ag: bool = False,
         ub_name: Optional[str] = None,
+        deferred_device: Optional[str] = "cuda",
     ) -> None:
         super().__init__()
 
@@ -641,6 +632,11 @@ class Linear(TransformerEngineBaseModule):
         if any([ub_atomic_gemm_rs, ub_atomic_gemm_ag]):
             assert ub_name is not None, "Userbuffer name [string] is not set."
         self.ub_name = ub_name
+        self.get_rng_state_tracker = get_rng_state_tracker
+        self.deferred_device = deferred_device if device == 'meta' else device
+        if device == 'meta':
+            assert self.parameters_split is None, ("Cannot split module parameters "
+                                                   "on 'meta' device.")
 
         if ub_split_rs or ub_split_ag or ub_atomic_gemm_rs:
             assert (
@@ -662,10 +658,6 @@ class Linear(TransformerEngineBaseModule):
         self.set_nccl_overlap_warning_if_tp()
 
         self.parallel_mode = parallel_mode
-        self.is_fsdp = False
-        if self.parallel_mode is not None and self.parallel_mode.lower() == 'fsdp':
-            self.is_fsdp = True
-            self.parallel_mode = None
         assert (
             self.parallel_mode in GemmParallelModes
         ), f"parallel_mode {parallel_mode} not supported"
@@ -675,8 +667,7 @@ class Linear(TransformerEngineBaseModule):
         elif self.parallel_mode == "row":
             self.in_features = divide(self.in_features, self.tp_size)
 
-        if init_method is None:
-            init_method = get_default_init_method()
+        self.param_init_fn = get_default_init_method() if init_method is None else init_method
 
         self.sequence_parallel = (self.tp_size > 1) and sequence_parallel
 
@@ -684,34 +675,16 @@ class Linear(TransformerEngineBaseModule):
             self.out_features, self.in_features,
             device=device, dtype=params_dtype)
 
-        # TODO(ksivaman): This functionality works with FP8 outside TE.
-        initialize_affine_weight_gpu(
-            temp_weight,
-            init_method,
-            get_rng_state_tracker,
-            partition_dim=1 if self.parallel_mode == "row" else 0,
-            stride=1,
-        )
-
-        if self.primary_weights_in_fp8:
-            self.init_fp8_metadata()
-            self.fp8_meta["update_amax_and_scale_fwd"] = True
-
-            self.weight_tensor = Float8Tensor.to_float8(
-                temp_weight,
-                fp8_meta=self.fp8_meta,
-                fp8_meta_index=tex.FP8FwdTensors.GEMM1_WEIGHT,
-            )
-        else:
-            self.weight_tensor = temp_weight
+        self.weight_tensor = self.init_weight_tensor(temp_weight)
 
         if self.use_bias:
             self.bias_tensor = torch.empty(self.out_features, device=device, dtype=params_dtype)
         else:
             self.bias_tensor = torch.Tensor().to(dtype=params_dtype, device=device)
 
-        with torch.no_grad():
-            self.bias_tensor.zero_()
+        if self.bias_tensor.device != torch.device('meta'):
+            with torch.no_grad():
+                self.bias_tensor.zero_()
 
         if parameters_split is None:
             parameters_split = {"": self.out_features}
@@ -777,6 +750,8 @@ class Linear(TransformerEngineBaseModule):
 
             slice_begin = slice_end
 
+        self.reset_parameters(defer_init=(device == 'meta'))
+
         self.fp8_weight_shapes.append(torch.Size((self.out_features, self.in_features)))
 
         # For RPL, bias has to be added after TP collectives
@@ -791,6 +766,48 @@ class Linear(TransformerEngineBaseModule):
             del self.weight_tensor
             if self.use_bias:
                 del self.bias_tensor
+
+    def init_weight_tensor(self, weights):
+        if weights.device == torch.device('meta'):
+            return weights
+
+        # TODO(ksivaman): This functionality works with FP8 outside TE.
+        initialize_affine_weight_gpu(
+            weights,
+            self.param_init_fn,
+            self.get_rng_state_tracker,
+            partition_dim=1 if self.parallel_mode == "row" else 0,
+            stride=1,
+            set_tp_attributes=False,
+        )
+
+        if self.primary_weights_in_fp8:
+            self.init_fp8_metadata()
+            self.fp8_meta["update_amax_and_scale_fwd"] = True
+            weights = Float8Tensor.to_float8(
+                data=weights,
+                fp8_meta=self.fp8_meta,
+                fp8_meta_index=tex.FP8FwdTensors.GEMM1_WEIGHT,
+            )
+
+        return weights
+
+    def reset_parameters(self, defer_init=False):
+        if defer_init:
+            return
+
+        # move all the parameters to the real device and initialize values
+        for wname, bname in zip(self.weight_names, self.bias_names):
+            if self._parameters[wname].device != torch.device(self.deferred_device):
+                self._parameters[wname].to(device=self.deferred_device)
+            self._parameters[wname] = Parameter(self.init_weight_tensor(self._parameters[wname]))
+
+            if self.use_bias:
+                if self._parameters[bname].device != torch.device(self.deferred_device):
+                    self._parameters[bname].to(device=self.deferred_device)
+
+                with torch.no_grad():
+                    self._parameters[bname].zero_()
 
     def get_fp8_weights_scratchpad(
         self,
@@ -896,7 +913,6 @@ class Linear(TransformerEngineBaseModule):
                 self.ub_atomic_gemm_rs,
                 self.ub_atomic_gemm_ag,
                 self.ub_name,
-                self.is_fsdp,
             )
             out = linear_fn(*args)
 

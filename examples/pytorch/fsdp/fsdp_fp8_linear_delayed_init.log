@@ -1,0 +1,38 @@
+[2023-12-15 21:35:30,938] torch.distributed.run: [WARNING] master_addr is only used for static rdzv_backend and when rdzv_endpoint is not specified.
+[2023-12-15 21:35:30,938] torch.distributed.run: [WARNING] 
+[2023-12-15 21:35:30,938] torch.distributed.run: [WARNING] *****************************************
+[2023-12-15 21:35:30,938] torch.distributed.run: [WARNING] Setting OMP_NUM_THREADS environment variable for each process to be 1 in default, to avoid your system being overloaded, please further tune the variable for optimal performance in your application as needed. 
+[2023-12-15 21:35:30,938] torch.distributed.run: [WARNING] *****************************************
+[GPU-3] Pre-FSDP memory use = 0.0MiB
+[GPU-1] Pre-FSDP memory use = 0.0MiB
+[GPU-0] WORLD_SIZE = 4
+
+[GPU-0] Pre-FSDP memory use = 0.0MiB
+[GPU-2] Pre-FSDP memory use = 0.0MiB
+[GPU-3] Post-FSDP memory use = 2147.549184MiB
+[GPU-1] Post-FSDP memory use = 2147.549184MiB
+[GPU-0] Post-FSDP memory use = 2147.549184MiB
+[GPU-2] Post-FSDP memory use = 2147.549184MiB
+[GPU-0] Iter. 1
+[GPU-0] Iter. 2
+[GPU-0] Iter. 3
+
+[GPU-0] Training Time: 19.744916015625s
+[GPU-0] Avg. Iter. Time: 6.581638671875001s
+[GPU-0] Peak memory use = 46205MiB
+
+
+[GPU-2] Training Time: 19.744142578125s
+[GPU-2] Avg. Iter. Time: 6.581380859375s
+[GPU-2] Peak memory use = 46205MiB
+
+
+[GPU-3] Training Time: 19.74371484375s
+[GPU-3] Avg. Iter. Time: 6.581238281249999s
+[GPU-3] Peak memory use = 46206MiB
+
+
+[GPU-1] Training Time: 19.744322265625s
+[GPU-1] Avg. Iter. Time: 6.581440755208334s
+[GPU-1] Peak memory use = 46205MiB
+
