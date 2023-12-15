@@ -1,0 +1,230 @@
+[2023-12-15 05:55:09,684] torch.distributed.run: [WARNING] master_addr is only used for static rdzv_backend and when rdzv_endpoint is not specified.
+[2023-12-15 05:55:09,685] torch.distributed.run: [WARNING] 
+[2023-12-15 05:55:09,685] torch.distributed.run: [WARNING] *****************************************
+[2023-12-15 05:55:09,685] torch.distributed.run: [WARNING] Setting OMP_NUM_THREADS environment variable for each process to be 1 in default, to avoid your system being overloaded, please further tune the variable for optimal performance in your application as needed. 
+[2023-12-15 05:55:09,685] torch.distributed.run: [WARNING] *****************************************
+[GPU-0] WORLD_SIZE = 8
+[GPU-0] FP8 FSDP OOM workaround DISABLED
+[GPU-0] Linear()
+Traceback (most recent call last):
+  File "/mnt/nvdl/usr/adener/code/te-torch-dev/TransformerEngine/examples/pytorch/fsdp/test_fsdp_fp8.py", line 159, in <module>
+Traceback (most recent call last):
+  File "/mnt/nvdl/usr/adener/code/te-torch-dev/TransformerEngine/examples/pytorch/fsdp/test_fsdp_fp8.py", line 159, in <module>
+    loss.backward()
+  File "/usr/local/lib/python3.10/dist-packages/torch/_tensor.py", line 503, in backward
+    torch.autograd.backward(
+  File "/usr/local/lib/python3.10/dist-packages/torch/autograd/__init__.py", line 254, in backward
+    Variable._execution_engine.run_backward(  # Calls into the C++ engine to run the backward pass
+  File "/usr/local/lib/python3.10/dist-packages/torch/utils/_contextlib.py", line 115, in decorate_context
+    return func(*args, **kwargs)
+  File "/usr/local/lib/python3.10/dist-packages/torch/distributed/fsdp/_runtime_utils.py", line 766, in _post_backward_hook
+    _reduce_grad(state, handle)
+  File "/usr/local/lib/python3.10/dist-packages/torch/distributed/fsdp/_runtime_utils.py", line 862, in _reduce_grad
+    grad_to_offload = _accumulate_sharded_grad(state, handle, new_sharded_grad)
+  File "/usr/local/lib/python3.10/dist-packages/torch/distributed/fsdp/_runtime_utils.py", line 894, in _accumulate_sharded_grad
+    _cast_grad_to_param_dtype(state, sharded_grad, flat_param)
+  File "/usr/local/lib/python3.10/dist-packages/torch/distributed/fsdp/_runtime_utils.py", line 1025, in _cast_grad_to_param_dtype
+Traceback (most recent call last):
+Traceback (most recent call last):
+Traceback (most recent call last):
+  File "/mnt/nvdl/usr/adener/code/te-torch-dev/TransformerEngine/examples/pytorch/fsdp/test_fsdp_fp8.py", line 159, in <module>
+  File "/mnt/nvdl/usr/adener/code/te-torch-dev/TransformerEngine/examples/pytorch/fsdp/test_fsdp_fp8.py", line 159, in <module>
+  File "/mnt/nvdl/usr/adener/code/te-torch-dev/TransformerEngine/examples/pytorch/fsdp/test_fsdp_fp8.py", line 159, in <module>
+    sharded_grad.data = sharded_grad.data.to(dtype=param.dtype)
+torch.cuda.OutOfMemoryError: CUDA out of memory. Tried to allocate 1.00 GiB. GPU 1 has a total capacity of 44.53 GiB of which 853.25 MiB is free. Process 3282274 has 43.69 GiB memory in use. Of the allocated memory 37.50 GiB is allocated by PyTorch, and 5.51 GiB is reserved by PyTorch but unallocated. If reserved but unallocated memory is large try setting max_split_size_mb to avoid fragmentation.  See documentation for Memory Management and PYTORCH_CUDA_ALLOC_CONF
+    loss.backward()
+  File "/usr/local/lib/python3.10/dist-packages/torch/_tensor.py", line 503, in backward
+Traceback (most recent call last):
+  File "/mnt/nvdl/usr/adener/code/te-torch-dev/TransformerEngine/examples/pytorch/fsdp/test_fsdp_fp8.py", line 159, in <module>
+    torch.autograd.backward(
+  File "/usr/local/lib/python3.10/dist-packages/torch/autograd/__init__.py", line 254, in backward
+    Variable._execution_engine.run_backward(  # Calls into the C++ engine to run the backward pass
+  File "/usr/local/lib/python3.10/dist-packages/torch/utils/_contextlib.py", line 115, in decorate_context
+    return func(*args, **kwargs)
+  File "/usr/local/lib/python3.10/dist-packages/torch/distributed/fsdp/_runtime_utils.py", line 766, in _post_backward_hook
+Traceback (most recent call last):
+    _reduce_grad(state, handle)
+  File "/usr/local/lib/python3.10/dist-packages/torch/distributed/fsdp/_runtime_utils.py", line 862, in _reduce_grad
+  File "/mnt/nvdl/usr/adener/code/te-torch-dev/TransformerEngine/examples/pytorch/fsdp/test_fsdp_fp8.py", line 159, in <module>
+    grad_to_offload = _accumulate_sharded_grad(state, handle, new_sharded_grad)
+  File "/usr/local/lib/python3.10/dist-packages/torch/distributed/fsdp/_runtime_utils.py", line 894, in _accumulate_sharded_grad
+    _cast_grad_to_param_dtype(state, sharded_grad, flat_param)
+  File "/usr/local/lib/python3.10/dist-packages/torch/distributed/fsdp/_runtime_utils.py", line 1025, in _cast_grad_to_param_dtype
+    sharded_grad.data = sharded_grad.data.to(dtype=param.dtype)
+torch.cuda.OutOfMemoryError: CUDA out of memory. Tried to allocate 1.00 GiB. GPU 2 has a total capacity of 44.53 GiB of which 853.25 MiB is free. Process 3282275 has 43.69 GiB memory in use. Of the allocated memory 37.50 GiB is allocated by PyTorch, and 5.51 GiB is reserved by PyTorch but unallocated. If reserved but unallocated memory is large try setting max_split_size_mb to avoid fragmentation.  See documentation for Memory Management and PYTORCH_CUDA_ALLOC_CONF
+Traceback (most recent call last):
+  File "/mnt/nvdl/usr/adener/code/te-torch-dev/TransformerEngine/examples/pytorch/fsdp/test_fsdp_fp8.py", line 159, in <module>
+    loss.backward()
+  File "/usr/local/lib/python3.10/dist-packages/torch/_tensor.py", line 503, in backward
+    loss.backward()
+  File "/usr/local/lib/python3.10/dist-packages/torch/_tensor.py", line 503, in backward
+    loss.backward()
+  File "/usr/local/lib/python3.10/dist-packages/torch/_tensor.py", line 503, in backward
+    torch.autograd.backward(
+  File "/usr/local/lib/python3.10/dist-packages/torch/autograd/__init__.py", line 254, in backward
+    Variable._execution_engine.run_backward(  # Calls into the C++ engine to run the backward pass
+      File "/usr/local/lib/python3.10/dist-packages/torch/utils/_contextlib.py", line 115, in decorate_context
+torch.autograd.backward(
+  File "/usr/local/lib/python3.10/dist-packages/torch/autograd/__init__.py", line 254, in backward
+    return func(*args, **kwargs)
+    torch.autograd.backward(  File "/usr/local/lib/python3.10/dist-packages/torch/distributed/fsdp/_runtime_utils.py", line 766, in _post_backward_hook
+
+  File "/usr/local/lib/python3.10/dist-packages/torch/autograd/__init__.py", line 254, in backward
+    Variable._execution_engine.run_backward(  # Calls into the C++ engine to run the backward pass
+    Variable._execution_engine.run_backward(  # Calls into the C++ engine to run the backward pass  File "/usr/local/lib/python3.10/dist-packages/torch/utils/_contextlib.py", line 115, in decorate_context
+
+  File "/usr/local/lib/python3.10/dist-packages/torch/utils/_contextlib.py", line 115, in decorate_context
+    _reduce_grad(state, handle)
+  File "/usr/local/lib/python3.10/dist-packages/torch/distributed/fsdp/_runtime_utils.py", line 862, in _reduce_grad
+    return func(*args, **kwargs)
+  File "/usr/local/lib/python3.10/dist-packages/torch/distributed/fsdp/_runtime_utils.py", line 766, in _post_backward_hook
+    return func(*args, **kwargs)
+  File "/usr/local/lib/python3.10/dist-packages/torch/distributed/fsdp/_runtime_utils.py", line 766, in _post_backward_hook
+    grad_to_offload = _accumulate_sharded_grad(state, handle, new_sharded_grad)
+  File "/usr/local/lib/python3.10/dist-packages/torch/distributed/fsdp/_runtime_utils.py", line 894, in _accumulate_sharded_grad
+    _reduce_grad(state, handle)
+  File "/usr/local/lib/python3.10/dist-packages/torch/distributed/fsdp/_runtime_utils.py", line 862, in _reduce_grad
+    _cast_grad_to_param_dtype(state, sharded_grad, flat_param)
+  File "/usr/local/lib/python3.10/dist-packages/torch/distributed/fsdp/_runtime_utils.py", line 1025, in _cast_grad_to_param_dtype
+    grad_to_offload = _accumulate_sharded_grad(state, handle, new_sharded_grad)
+  File "/usr/local/lib/python3.10/dist-packages/torch/distributed/fsdp/_runtime_utils.py", line 894, in _accumulate_sharded_grad
+    _reduce_grad(state, handle)
+  File "/usr/local/lib/python3.10/dist-packages/torch/distributed/fsdp/_runtime_utils.py", line 862, in _reduce_grad
+            sharded_grad.data = sharded_grad.data.to(dtype=param.dtype)_cast_grad_to_param_dtype(state, sharded_grad, flat_param)
+
+loss.backward()  File "/usr/local/lib/python3.10/dist-packages/torch/distributed/fsdp/_runtime_utils.py", line 1025, in _cast_grad_to_param_dtype
+
+torch.cuda.OutOfMemoryError:   File "/usr/local/lib/python3.10/dist-packages/torch/_tensor.py", line 503, in backward
+CUDA out of memory. Tried to allocate 1.00 GiB. GPU 7 has a total capacity of 44.53 GiB of which 873.25 MiB is free. Process 3282280 has 43.67 GiB memory in use. Of the allocated memory 37.50 GiB is allocated by PyTorch, and 5.51 GiB is reserved by PyTorch but unallocated. If reserved but unallocated memory is large try setting max_split_size_mb to avoid fragmentation.  See documentation for Memory Management and PYTORCH_CUDA_ALLOC_CONF
+    grad_to_offload = _accumulate_sharded_grad(state, handle, new_sharded_grad)
+  File "/usr/local/lib/python3.10/dist-packages/torch/distributed/fsdp/_runtime_utils.py", line 894, in _accumulate_sharded_grad
+    sharded_grad.data = sharded_grad.data.to(dtype=param.dtype)
+torch.cuda.OutOfMemoryError: CUDA out of memory. Tried to allocate 1.00 GiB. GPU 6 has a total capacity of 44.53 GiB of which 853.25 MiB is free. Process 3282279 has 43.69 GiB memory in use. Of the allocated memory 37.50 GiB is allocated by PyTorch, and 5.51 GiB is reserved by PyTorch but unallocated. If reserved but unallocated memory is large try setting max_split_size_mb to avoid fragmentation.  See documentation for Memory Management and PYTORCH_CUDA_ALLOC_CONF
+    torch.autograd.backward(
+  File "/usr/local/lib/python3.10/dist-packages/torch/autograd/__init__.py", line 254, in backward
+    _cast_grad_to_param_dtype(state, sharded_grad, flat_param)
+  File "/usr/local/lib/python3.10/dist-packages/torch/distributed/fsdp/_runtime_utils.py", line 1025, in _cast_grad_to_param_dtype
+    Variable._execution_engine.run_backward(  # Calls into the C++ engine to run the backward pass
+  File "/usr/local/lib/python3.10/dist-packages/torch/utils/_contextlib.py", line 115, in decorate_context
+    return func(*args, **kwargs)
+  File "/usr/local/lib/python3.10/dist-packages/torch/distributed/fsdp/_runtime_utils.py", line 766, in _post_backward_hook
+    sharded_grad.data = sharded_grad.data.to(dtype=param.dtype)
+torch.cuda.OutOfMemoryError: CUDA out of memory. Tried to allocate 1.00 GiB. GPU 4 has a total capacity of 44.53 GiB of which 853.25 MiB is free. Process 3282277 has 43.69 GiB memory in use. Of the allocated memory 37.50 GiB is allocated by PyTorch, and 5.51 GiB is reserved by PyTorch but unallocated. If reserved but unallocated memory is large try setting max_split_size_mb to avoid fragmentation.  See documentation for Memory Management and PYTORCH_CUDA_ALLOC_CONF
+    _reduce_grad(state, handle)
+  File "/usr/local/lib/python3.10/dist-packages/torch/distributed/fsdp/_runtime_utils.py", line 862, in _reduce_grad
+    grad_to_offload = _accumulate_sharded_grad(state, handle, new_sharded_grad)
+  File "/usr/local/lib/python3.10/dist-packages/torch/distributed/fsdp/_runtime_utils.py", line 894, in _accumulate_sharded_grad
+    _cast_grad_to_param_dtype(state, sharded_grad, flat_param)
+  File "/usr/local/lib/python3.10/dist-packages/torch/distributed/fsdp/_runtime_utils.py", line 1025, in _cast_grad_to_param_dtype
+    loss.backward()
+  File "/usr/local/lib/python3.10/dist-packages/torch/_tensor.py", line 503, in backward
+    sharded_grad.data = sharded_grad.data.to(dtype=param.dtype)
+torch.cuda.OutOfMemoryError: CUDA out of memory. Tried to allocate 1.00 GiB. GPU 3 has a total capacity of 44.53 GiB of which 853.25 MiB is free. Process 3282276 has 43.69 GiB memory in use. Of the allocated memory 37.50 GiB is allocated by PyTorch, and 5.51 GiB is reserved by PyTorch but unallocated. If reserved but unallocated memory is large try setting max_split_size_mb to avoid fragmentation.  See documentation for Memory Management and PYTORCH_CUDA_ALLOC_CONF
+    torch.autograd.backward(
+  File "/usr/local/lib/python3.10/dist-packages/torch/autograd/__init__.py", line 254, in backward
+    loss.backward()
+  File "/usr/local/lib/python3.10/dist-packages/torch/_tensor.py", line 503, in backward
+    Variable._execution_engine.run_backward(  # Calls into the C++ engine to run the backward pass
+  File "/usr/local/lib/python3.10/dist-packages/torch/utils/_contextlib.py", line 115, in decorate_context
+    return func(*args, **kwargs)
+  File "/usr/local/lib/python3.10/dist-packages/torch/distributed/fsdp/_runtime_utils.py", line 766, in _post_backward_hook
+    torch.autograd.backward(
+  File "/usr/local/lib/python3.10/dist-packages/torch/autograd/__init__.py", line 254, in backward
+    _reduce_grad(state, handle)
+  File "/usr/local/lib/python3.10/dist-packages/torch/distributed/fsdp/_runtime_utils.py", line 862, in _reduce_grad
+    Variable._execution_engine.run_backward(  # Calls into the C++ engine to run the backward pass
+  File "/usr/local/lib/python3.10/dist-packages/torch/utils/_contextlib.py", line 115, in decorate_context
+    grad_to_offload = _accumulate_sharded_grad(state, handle, new_sharded_grad)
+  File "/usr/local/lib/python3.10/dist-packages/torch/distributed/fsdp/_runtime_utils.py", line 894, in _accumulate_sharded_grad
+    return func(*args, **kwargs)
+  File "/usr/local/lib/python3.10/dist-packages/torch/distributed/fsdp/_runtime_utils.py", line 766, in _post_backward_hook
+    _cast_grad_to_param_dtype(state, sharded_grad, flat_param)
+  File "/usr/local/lib/python3.10/dist-packages/torch/distributed/fsdp/_runtime_utils.py", line 1025, in _cast_grad_to_param_dtype
+    _reduce_grad(state, handle)
+  File "/usr/local/lib/python3.10/dist-packages/torch/distributed/fsdp/_runtime_utils.py", line 862, in _reduce_grad
+    sharded_grad.data = sharded_grad.data.to(dtype=param.dtype)
+    grad_to_offload = _accumulate_sharded_grad(state, handle, new_sharded_grad)
+  File "/usr/local/lib/python3.10/dist-packages/torch/distributed/fsdp/_runtime_utils.py", line 894, in _accumulate_sharded_grad
+torch.cuda.OutOfMemoryError: CUDA out of memory. Tried to allocate 1.00 GiB. GPU 0 has a total capacity of 44.53 GiB of which 857.25 MiB is free. Process 3282273 has 43.68 GiB memory in use. Of the allocated memory 37.50 GiB is allocated by PyTorch, and 5.51 GiB is reserved by PyTorch but unallocated. If reserved but unallocated memory is large try setting max_split_size_mb to avoid fragmentation.  See documentation for Memory Management and PYTORCH_CUDA_ALLOC_CONF
+    _cast_grad_to_param_dtype(state, sharded_grad, flat_param)
+  File "/usr/local/lib/python3.10/dist-packages/torch/distributed/fsdp/_runtime_utils.py", line 1025, in _cast_grad_to_param_dtype
+    sharded_grad.data = sharded_grad.data.to(dtype=param.dtype)
+torch.cuda.OutOfMemoryError: CUDA out of memory. Tried to allocate 1.00 GiB. GPU 5 has a total capacity of 44.53 GiB of which 853.25 MiB is free. Process 3282278 has 43.69 GiB memory in use. Of the allocated memory 37.50 GiB is allocated by PyTorch, and 5.51 GiB is reserved by PyTorch but unallocated. If reserved but unallocated memory is large try setting max_split_size_mb to avoid fragmentation.  See documentation for Memory Management and PYTORCH_CUDA_ALLOC_CONF
+[2023-12-15 05:55:24,857] torch.distributed.elastic.multiprocessing.api: [ERROR] failed (exitcode: 1) local_rank: 0 (pid: 36981) of binary: /usr/bin/python
+Traceback (most recent call last):
+  File "/usr/local/bin/torchrun", line 8, in <module>
+    sys.exit(main())
+  File "/usr/local/lib/python3.10/dist-packages/torch/distributed/elastic/multiprocessing/errors/__init__.py", line 351, in wrapper
+    return f(*args, **kwargs)
+  File "/usr/local/lib/python3.10/dist-packages/torch/distributed/run.py", line 806, in main
+    run(args)
+  File "/usr/local/lib/python3.10/dist-packages/torch/distributed/run.py", line 797, in run
+    elastic_launch(
+  File "/usr/local/lib/python3.10/dist-packages/torch/distributed/launcher/api.py", line 134, in __call__
+    return launch_agent(self._config, self._entrypoint, list(args))
+  File "/usr/local/lib/python3.10/dist-packages/torch/distributed/launcher/api.py", line 264, in launch_agent
+    raise ChildFailedError(
+torch.distributed.elastic.multiprocessing.errors.ChildFailedError: 
+============================================================
+test_fsdp_fp8.py FAILED
+------------------------------------------------------------
+Failures:
+[1]:
+  time      : 2023-12-15_05:55:24
+  host      : a4u8g-0145.nvidia.com
+  rank      : 1 (local_rank: 1)
+  exitcode  : 1 (pid: 36982)
+  error_file: <N/A>
+  traceback : To enable traceback see: https://pytorch.org/docs/stable/elastic/errors.html
+[2]:
+  time      : 2023-12-15_05:55:24
+  host      : a4u8g-0145.nvidia.com
+  rank      : 2 (local_rank: 2)
+  exitcode  : 1 (pid: 36983)
+  error_file: <N/A>
+  traceback : To enable traceback see: https://pytorch.org/docs/stable/elastic/errors.html
+[3]:
+  time      : 2023-12-15_05:55:24
+  host      : a4u8g-0145.nvidia.com
+  rank      : 3 (local_rank: 3)
+  exitcode  : 1 (pid: 36984)
+  error_file: <N/A>
+  traceback : To enable traceback see: https://pytorch.org/docs/stable/elastic/errors.html
+[4]:
+  time      : 2023-12-15_05:55:24
+  host      : a4u8g-0145.nvidia.com
+  rank      : 4 (local_rank: 4)
+  exitcode  : 1 (pid: 36985)
+  error_file: <N/A>
+  traceback : To enable traceback see: https://pytorch.org/docs/stable/elastic/errors.html
+[5]:
+  time      : 2023-12-15_05:55:24
+  host      : a4u8g-0145.nvidia.com
+  rank      : 5 (local_rank: 5)
+  exitcode  : 1 (pid: 36986)
+  error_file: <N/A>
+  traceback : To enable traceback see: https://pytorch.org/docs/stable/elastic/errors.html
+[6]:
+  time      : 2023-12-15_05:55:24
+  host      : a4u8g-0145.nvidia.com
+  rank      : 6 (local_rank: 6)
+  exitcode  : 1 (pid: 36987)
+  error_file: <N/A>
+  traceback : To enable traceback see: https://pytorch.org/docs/stable/elastic/errors.html
+[7]:
+  time      : 2023-12-15_05:55:24
+  host      : a4u8g-0145.nvidia.com
+  rank      : 7 (local_rank: 7)
+  exitcode  : 1 (pid: 36988)
+  error_file: <N/A>
+  traceback : To enable traceback see: https://pytorch.org/docs/stable/elastic/errors.html
+------------------------------------------------------------
+Root Cause (first observed failure):
+[0]:
+  time      : 2023-12-15_05:55:24
+  host      : a4u8g-0145.nvidia.com
+  rank      : 0 (local_rank: 0)
+  exitcode  : 1 (pid: 36981)
+  error_file: <N/A>
+  traceback : To enable traceback see: https://pytorch.org/docs/stable/elastic/errors.html
+============================================================
