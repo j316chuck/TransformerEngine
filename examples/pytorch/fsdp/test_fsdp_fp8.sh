@@ -1,9 +1,11 @@
 #!/bin/bash
 
+NVIDIA_SMI_GPU_COUNT=$(nvidia-smi -L | wc -l)
+
 # NVTE_ALLOW_NONDETERMINISTIC_ALGO=0 \
 NVTE_TORCH_COMPILE=0 \
 NVTE_FLASH_ATTN=1 \
 NVTE_FWD_LAYERNORM_SM_MARGIN=0 \
 NVTE_BWD_LAYERNORM_SM_MARGIN=0 \
 CUDA_DEVICE_MAX_CONNECTIONS=1 \
-torchrun --standalone --nnodes=1 --nproc-per-node=8 test_fsdp_fp8.py "$@"
+torchrun --standalone --nnodes=1 --nproc-per-node=$NVIDIA_SMI_GPU_COUNT test_fsdp_fp8.py "$@"

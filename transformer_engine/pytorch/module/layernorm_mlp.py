@@ -222,7 +222,7 @@ class _LayerNormMLP(torch.autograd.Function):
                     fp8_meta=fp8_meta,
                     fp8_meta_index=tex.FP8FwdTensors.GEMM2_WEIGHT,
                 )
-                if is_grad_enabled and not is_fsdp:
+                if is_grad_enabled:
                     # FSDP weights need to be transposed in the backward pass to avoid
                     # memory usage blowing up due to unsharded Fp8 weight copies.
                     tex.fp8_cast_transpose_fused(
@@ -433,11 +433,10 @@ class _LayerNormMLP(torch.autograd.Function):
                 fc1_out,
                 gelu_out,
                 fc1_weight,
-                fc1_weight_t_fp8 if fp8 and not is_fsdp else None,
+                fc1_weight_t_fp8 if fp8 else None,
                 fc2_weight,
-                fc2_weight_t_fp8 if fp8 and not is_fsdp else None,
+                fc2_weight_t_fp8 if fp8 else None,
                 fc1_bias,
-                fp8_meta["scaling_fwd"].scale.clone() if fp8 else None,
                 fp8_meta["scaling_fwd"].scale_inv.clone() if fp8 else None,
             )
             ctx.activation_dtype = activation_dtype
@@ -503,7 +502,6 @@ class _LayerNormMLP(torch.autograd.Function):
                 fc2_weight,
                 fc2_weight_t_fp8,
                 fc1_bias,
-                fwd_scales,
                 fwd_scale_inverses,
             ) = ctx.saved_tensors
 
@@ -517,79 +515,11 @@ class _LayerNormMLP(torch.autograd.Function):
                     ctx.fp8_meta["recipe"], fprop_tensor=False
                 )
 
-                @dataclass
-                class dummy_fp8_meta:
-                    amax_history = torch.empty(
-                        ctx.amax_shape, device=torch.cuda.current_device())
-                    scale = fwd_scales
-                    scale_inv = fwd_scale_inverses
-
                 if fc1_weight_t_fp8 is None:
-                    if ctx.primary_weights_in_fp8:
-                        # Primary weights are already in Fp8 so just transpose
-                        fc1_weight_t_fp8 = \
-                            fc1_weight.transpose(update_cache=ctx.is_first_microbatch)
-
-                    else:
-                        # Module is wrapped as torch.distributed.fsdp.FullyShardedDataParallel
-                        # and primary weights are not Fp8 so we need cast+transpose
-                        fc1_weight_t_fp8 = Float8Tensor(
-                            data=torch.empty(
-                                fc1_weight.shape[1],
-                                fc1_weight.shape[0],
-                                device=torch.cuda.current_device(),
-                                dtype=torch.uint8),
-                            fp8_dtype=tex.DType.kFloat8E4M3,
-                            fp8_scale_inv=1,
-                        )
-                        tex.fp8_cast_transpose_fused(
-                            fc1_weight,
-                            dummy_fp8_meta,
-                            tex.FP8FwdTensors.GEMM1_WEIGHT,
-                            fp8_dtype_forward,
-                            transpose_out=fc1_weight_t_fp8._data,
-                        )
+                    fc1_weight_t_fp8 = fc1_weight.transpose(update_cache=ctx.is_first_microbatch)
 
                 if fc2_weight_t_fp8 is None:
-                    if ctx.primary_weights_in_fp8:
-                        # Primary weights are already in Fp8 so just transpose
-                        fc2_weight_t_fp8 = \
-                            fc2_weight.transpose(update_cache=ctx.is_first_microbatch)
-                    else:
-                        # Module is wrapped as torch.distributed.fsdp.FullyShardedDataParallel
-                        # and primary weights are not Fp8 so we need cast+transpose
-                        fc2_weight_t_fp8 = Float8Tensor(
-                            data=torch.empty(
-                                fc2_weight.shape[1],
-                                fc2_weight.shape[0],
-                                device=torch.cuda.current_device(),
-                                dtype=torch.uint8),
-                            fp8_dtype=tex.DType.kFloat8E4M3,
-                            fp8_scale_inv=1,
-                        )
-                        tex.fp8_cast_transpose_fused(
-                            fc2_weight,
-                            dummy_fp8_meta,
-                            tex.FP8FwdTensors.GEMM2_WEIGHT,
-                            fp8_dtype_forward,
-                            transpose_out=fc2_weight_t_fp8._data,
-                        )
-
-            # Primary weights are in FP8 or module is wrapped as FullyShardedDataParallel
-            if ctx.fp8 and fc1_weight_t_fp8 is None:
-                if ctx.is_fsdp or not isinstance(fc1_weight, Float8Tensor):
-                    fc1_weight = Float8Tensor.to_float8(
-                        fc1_weight,
-                        fp8_meta=ctx.fp8_meta,
-                        fp8_meta_index=tex.FP8FwdTensors.GEMM1_WEIGHT)
-                fc1_weight_t_fp8 = fc1_weight.transpose(update_cache=ctx.is_first_microbatch)
-            if ctx.fp8 and fc2_weight_t_fp8 is None:
-                if ctx.is_fsdp or not isinstance(fc2_weight, Float8Tensor):
-                    fc2_weight = Float8Tensor.to_float8(
-                        fc2_weight,
-                        fp8_meta=ctx.fp8_meta,
-                        fp8_meta_index=tex.FP8FwdTensors.GEMM2_WEIGHT)
-                f2_weight_t_fp8 = fc2_weight.transpose(update_cache=ctx.is_first_microbatch)
+                    fc2_weight_t_fp8 = fc2_weight.transpose(update_cache=ctx.is_first_microbatch)
 
             activation_func = _act_func(ctx.activation)[1]
 

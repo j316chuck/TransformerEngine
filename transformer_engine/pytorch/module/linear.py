@@ -163,7 +163,7 @@ class _Linear(torch.autograd.Function):
                     fp8_meta=fp8_meta,
                     fp8_meta_index=tex.FP8FwdTensors.GEMM1_WEIGHT,
                 )
-                if is_grad_enabled and not is_fsdp:
+                if is_grad_enabled:
                     # FSDP weights need to be transposed in the backward pass to avoid
                     # memory usage blowing up due to unsharded Fp8 weight copies.
                     fp8_cast_transpose_fused(
@@ -283,8 +283,7 @@ class _Linear(torch.autograd.Function):
                 saved_inputmat,
                 saved_inputmat_t,
                 weight,
-                weight_t_fp8 if fp8 and not is_fsdp else None,
-                fp8_meta["scaling_fwd"].scale.clone() if fp8 else None,
+                weight_t_fp8 if fp8 else None,
                 fp8_meta["scaling_fwd"].scale_inv.clone() if fp8 else None,
             )
             ctx.activation_dtype = activation_dtype
@@ -330,7 +329,6 @@ class _Linear(torch.autograd.Function):
                 inputmat_t,
                 weight,
                 weight_t_fp8,
-                fwd_scales,
                 fwd_scale_inverses,
             ) = ctx.saved_tensors
 
@@ -345,33 +343,7 @@ class _Linear(torch.autograd.Function):
                 )
 
                 if weight_t_fp8 is None:
-                    if ctx.primary_weights_in_fp8:
-                        weight_t_fp8 = weight.transpose(update_cache=ctx.is_first_microbatch)
-                    else:
-                        # Module is wrapped as torch.distributed.fsdp.FullyShardedDataParallel
-                        @dataclass
-                        class dummy_fp8_meta:
-                            amax_history = torch.empty(
-                                ctx.amax_shape, device=torch.cuda.current_device())
-                            scale = fwd_scales
-                            scale_inv = fwd_scale_inverses
-
-                        weight_t_fp8 = Float8Tensor(
-                            data=torch.empty(
-                                weight.shape[1],
-                                weight.shape[0],
-                                device=torch.cuda.current_device(),
-                                dtype=torch.uint8),
-                            fp8_dtype=tex.DType.kFloat8E4M3,
-                            fp8_scale_inv=1,
-                        )
-                        fp8_cast_transpose_fused(
-                            weight,
-                            dummy_fp8_meta,
-                            tex.FP8FwdTensors.GEMM1_WEIGHT,
-                            fp8_dtype_forward,
-                            transpose_out=weight_t_fp8._data,
-                        )
+                    weight_t_fp8 = weight.transpose(update_cache=ctx.is_first_microbatch)
 
             if ctx.ub_split_ag or ctx.ub_atomic_gemm_ag:
                 tp_world_size = get_distributed_world_size(ctx.tp_group)
