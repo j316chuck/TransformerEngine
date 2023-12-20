@@ -894,17 +894,10 @@ class LayerNormLinear(TransformerEngineBaseModule):
         self.bwd_ln_sm_margin = int(os.getenv("NVTE_BWD_LAYERNORM_SM_MARGIN", "0"))
 
         # Clean up weight and bias buffers
-<<<<<<< HEAD
         if self.parameters_split is None:
             del self.weight_tensor
             if self.use_bias:
                 del self.bias_tensor
-=======
-        if self.is_fsdp and self.parameters_split is None:
-            del self.weight_tensor
-            if self.use_bias:
-                self.bias_tensor
->>>>>>> 64442c4 (removed excess weight/bias buffers in linear blocks)
 
     def reset_layer_norm_parameters(self) -> None:
         """Init LN params"""
