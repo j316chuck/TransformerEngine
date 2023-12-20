@@ -589,6 +589,11 @@ class Linear(TransformerEngineBaseModule):
                   it controls the type used to allocate the initial parameters. Useful when
                   the model is trained with lower precision and the original FP32 parameters
                   would not fit in GPU memory.
+    deferred_device : Union[torch.device, str], default = "cuda"
+                    when the layer is initialized with `device='meta'`, this setting controls
+                    the device that weight and bias tensors are cast onto in `reset_parameters()`
+                    during deferred initialization. This has no effect when the initialization
+                    device is *not* set to `meta`.
     """
 
     def __init__(
@@ -612,7 +617,7 @@ class Linear(TransformerEngineBaseModule):
         ub_atomic_gemm_rs: bool = False,
         ub_atomic_gemm_ag: bool = False,
         ub_name: Optional[str] = None,
-        deferred_device: Optional[str] = "cuda",
+        deferred_device: Optional[Union[torch.device, str]] = "cuda",
     ) -> None:
         super().__init__()
 
