@@ -296,6 +296,10 @@ class TransformerEngineBaseModule(torch.nn.Module, ABC):
                             self.fp8_meta[meta_key].amax_history[0])
                         FP8GlobalStateManager.global_amax_history_buffer[buffer_key][pos] = (
                             self.fp8_meta[meta_key].amax_history)
+    @property
+    def _extra_state(self) -> torch.Tensor:
+        """Aliased attribute for extra states."""
+        return self.get_extra_state()
 
     def set_meta_tensor(self, fwd: bool) -> None:
         """Init scales and amaxes for fwd | bwd."""
