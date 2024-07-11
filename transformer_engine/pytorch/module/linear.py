@@ -158,7 +158,7 @@ class _Linear(torch.autograd.Function):
         else:
             inputmat_total = inputmat
         if fp8:
-            logger.debug("Running forward in FP8")
+            logger.info("Running forward in FP8")
 
             bias_dtype = torch.bfloat16 if activation_dtype == torch.float32 else activation_dtype
             bias = cast_if_needed(bias, bias_dtype) if use_bias else bias
@@ -248,7 +248,8 @@ class _Linear(torch.autograd.Function):
                     dtype=activation_dtype,
                 )
         else:
-            logger.debug("Running forward in %s", activation_dtype)
+            print(f"Running forward in {activation_dtype}")
+            logger.info("Running forward in %s", activation_dtype)
 
             # Cast for native AMP
             weight = cast_if_needed(weight, activation_dtype)
