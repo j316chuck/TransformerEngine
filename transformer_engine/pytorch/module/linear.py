@@ -744,9 +744,9 @@ class Linear(TransformerEngineBaseModule):
         ub_name: Optional[str] = None,
     ) -> None:
         super().__init__()
-        logger.info("info params_dtype %s", params_dtype)
+        logger.info("Input to FP8 linear params_dtype %s", params_dtype)
         params_dtype = torch.get_default_dtype() if params_dtype is None else params_dtype
-        logger.info("info params_dtype %s", params_dtype)
+        logger.info("FP8 linear set to params_dtype %s", params_dtype)
         self.in_features = in_features
         self.out_features = out_features
         self.fuse_wgrad_accumulation = fuse_wgrad_accumulation
