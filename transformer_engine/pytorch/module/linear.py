@@ -159,6 +159,7 @@ class _Linear(torch.autograd.Function):
             inputmat_total = inputmat
         if fp8:
             logger.info("Running forward in FP8")
+            print("Running forward in FP8")
 
             bias_dtype = torch.bfloat16 if activation_dtype == torch.float32 else activation_dtype
             bias = cast_if_needed(bias, bias_dtype) if use_bias else bias
@@ -249,6 +250,7 @@ class _Linear(torch.autograd.Function):
                 )
         else:
             logger.info("Running forward in %s", activation_dtype)
+            print(f"Running forward in {activation_dtype}")
 
             # Cast for native AMP
             weight = cast_if_needed(weight, activation_dtype)
@@ -453,7 +455,7 @@ class _Linear(torch.autograd.Function):
             if ctx.requires_dgrad:
                 if ctx.fp8:
                     logger.info("Running backward in FP8")
-
+                    print("Running backward in FP8")
                     if ctx.is_input_fp8:
                         out_index, meta_tensor, output_te_dtype, output_dtype = (
                             tex.FP8BwdTensors.GRAD_INPUT1,
@@ -497,6 +499,7 @@ class _Linear(torch.autograd.Function):
                         )
                 else:
                     logger.info("Running backward in %s", ctx.activation_dtype)
+                    print(f"Running backward in {ctx.activation_dtype}")
 
                     dgrad, _, _ = gemm(
                         weight,
@@ -744,8 +747,10 @@ class Linear(TransformerEngineBaseModule):
     ) -> None:
         super().__init__()
         logger = logging.getLogger("Linear")
+        print(f"Input to FP8 linear params_dtype {params_dtype}")
         logger.info("Input to FP8 linear params_dtype %s", params_dtype)
         params_dtype = torch.get_default_dtype() if params_dtype is None else params_dtype
+        print(f"FP8 linear set to params_dtype {params_dtype}")
         logger.info("FP8 linear set to params_dtype %s", params_dtype)
         self.in_features = in_features
         self.out_features = out_features
