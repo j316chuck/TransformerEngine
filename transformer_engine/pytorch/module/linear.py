@@ -248,7 +248,6 @@ class _Linear(torch.autograd.Function):
                     dtype=activation_dtype,
                 )
         else:
-            print(f"Running forward in {activation_dtype}")
             logger.info("Running forward in %s", activation_dtype)
 
             # Cast for native AMP
@@ -453,7 +452,7 @@ class _Linear(torch.autograd.Function):
 
             if ctx.requires_dgrad:
                 if ctx.fp8:
-                    logger.debug("Running backward in FP8")
+                    logger.info("Running backward in FP8")
 
                     if ctx.is_input_fp8:
                         out_index, meta_tensor, output_te_dtype, output_dtype = (
@@ -497,7 +496,7 @@ class _Linear(torch.autograd.Function):
                             dtype=ctx.activation_dtype,
                         )
                 else:
-                    logger.debug("Running backward in %s", ctx.activation_dtype)
+                    logger.info("Running backward in %s", ctx.activation_dtype)
 
                     dgrad, _, _ = gemm(
                         weight,
